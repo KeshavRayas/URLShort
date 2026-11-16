@@ -1,0 +1,10 @@
+.git
+.github
+docs
+e2e
+scripts
+*.html
+*.md
+e2e-report.*
+.env
+bin

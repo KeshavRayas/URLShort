@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>URL shortener — production architecture</title>
+<style>
+  :root{
+    --paper:#f2f0eb;--sheet:#fffdfa;--ink:#14161a;--muted:#5d6573;--faint:#8b93a1;
+    --line:#e3dfd6;--blue:#1a56db;--blue-soft:#eef3fe;--teal:#0b7285;--teal-soft:#e9f6f7;
+    --red:#b42318;--red-soft:#fbf0ef;--violet:#6d28d9;--violet-soft:#f4efff;
+    --mono:ui-monospace,"Cascadia Mono","JetBrains Mono",Consolas,monospace;
+    --sans:ui-sans-serif,"Segoe UI",system-ui,-apple-system,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);line-height:1.5;-webkit-font-smoothing:antialiased}
+  .page{max-width:980px;margin:0 auto;padding:24px 20px 40px}
+  .rule{height:3px;background:linear-gradient(90deg,var(--blue) 0 40%,var(--red) 40% 70%,var(--violet) 70% 100%);border-radius:3px}
+
+  header{padding:18px 0 4px}
+  .eyebrow{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:0 0 8px}
+  h1{font-size:clamp(24px,4.6vw,34px);line-height:1.1;letter-spacing:-.022em;margin:0 0 8px;font-weight:650}
+  .deck{margin:0;color:var(--muted);font-size:13.5px;max-width:62ch}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+  .chip{font-family:var(--mono);font-size:10px;color:var(--muted);background:#fff;border:1px solid var(--line);border-radius:999px;padding:2px 9px}
+
+  .layout{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);gap:26px;margin-top:22px;align-items:start}
+  .flow{max-width:560px}
+  .aside{position:sticky;top:20px}
+
+  .node{background:var(--sheet);border:1px solid var(--line);border-radius:12px;padding:11px 13px;box-shadow:0 1px 0 rgba(20,22,26,.02)}
+  .node .nhead{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:7px}
+  .node .label{font-family:var(--mono);font-size:8.8px;letter-spacing:.13em;text-transform:uppercase;color:var(--faint)}
+  .node h3{margin:0;font-size:13.5px;font-weight:650;letter-spacing:-.01em}
+  .node .meta{font-family:var(--mono);font-size:9px;color:var(--faint);white-space:nowrap}
+
+  .rows{display:grid;gap:4px}
+  .r{display:grid;grid-template-columns:auto 1fr;gap:8px;align-items:baseline;font-size:10.8px;color:var(--muted)}
+  .r code{font-family:var(--mono);font-size:9.8px;color:var(--ink);background:#faf8f3;border:1px solid #eee9df;border-radius:4px;padding:1px 5px;white-space:nowrap}
+  .r span{line-height:1.4}
+
+  .node.client{border-color:#ded9cf}
+  .node.edge{background:var(--teal-soft);border-color:#bfe0e4}
+  .node.api{background:var(--blue-soft);border-color:#c3d3f7}
+  .node.redis{background:var(--red-soft);border-color:#ecc9c4}
+  .node.pg{background:var(--violet-soft);border-color:#d9cdf7}
+  .node.async{border-style:dashed;border-color:#cfc8bb;background:#fff}
+
+  .conn{position:relative;min-height:36px;padding:4px 0 4px 24px;display:flex;align-items:center}
+  .conn::before{content:"";position:absolute;left:11px;top:0;bottom:0;width:1px;background:#cfc7ba}
+  .conn::after{content:"";position:absolute;left:8px;bottom:1px;border-left:3.5px solid transparent;border-right:3.5px solid transparent;border-top:5px solid #cfc7ba}
+  .conn .t{font-family:var(--mono);font-size:9.4px;color:var(--faint);letter-spacing:.01em}
+  .conn .t b{color:var(--muted);font-weight:600}
+
+  .aside .card{background:var(--sheet);border:1px solid var(--line);border-radius:12px;padding:13px 14px}
+  .aside h4{margin:0 0 3px;font-size:11px;font-family:var(--mono);letter-spacing:.13em;text-transform:uppercase;color:var(--faint);font-weight:500}
+  .aside ul{margin:9px 0 0;padding:0;list-style:none;display:grid;gap:9px}
+  .aside li{font-size:11.4px;color:var(--muted);line-height:1.45}
+  .aside li b{display:block;color:var(--ink);font-size:11.8px;font-weight:650}
+  .aside .foot{margin:11px 0 0;padding-top:9px;border-top:1px solid var(--line);font-size:10.6px;color:var(--faint)}
+
+  footer{margin-top:26px;padding-top:12px;border-top:1px solid var(--line);font-family:var(--mono);font-size:9px;color:var(--faint)}
+
+  @media (max-width:760px){
+    .layout{grid-template-columns:1fr;gap:18px}
+    .aside{position:static}
+    .flow{max-width:none}
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="rule"></div>
+
+  <header>
+    <p class="eyebrow">production design · go 1.27</p>
+    <h1>URL shortener, production shape</h1>
+    <p class="deck">Durable links, a cache that can be flushed, and click writes that never block a redirect.</p>
+    <div class="chips">
+      <span class="chip">Go API × N</span>
+      <span class="chip">Postgres 16</span>
+      <span class="chip">Redis 7</span>
+      <span class="chip">async clicks</span>
+    </div>
+  </header>
+
+  <div class="layout">
+    <div class="flow">
+
+      <div class="node client">
+        <div class="nhead"><h3>Client</h3><span class="meta">browser · curl · SDK</span></div>
+        <div class="rows">
+          <div class="r"><code>POST /api/v1/links</code><span>shorten</span></div>
+          <div class="r"><code>GET /{code}</code><span>follow</span></div>
+        </div>
+      </div>
+
+      <div class="conn"><span class="t">HTTPS · <b>X-API-Key</b> on management routes</span></div>
+
+      <div class="node edge">
+        <div class="nhead"><div><span class="label">edge</span><h3>Load balancer / ingress</h3></div><span class="meta">TLS · HTTP/2</span></div>
+        <div class="rows">
+          <div class="r"><code>Health checks</code><span>GET /readyz · deregister, then let the process drain</span></div>
+          <div class="r"><code>Round-robin</code><span>no sticky sessions — instances share nothing</span></div>
+        </div>
+      </div>
+
+      <div class="conn"><span class="t"><b>any instance</b> · sets X-Forwarded-For from a trusted range</span></div>
+
+      <div class="node api">
+        <div class="nhead"><div><span class="label">stateless</span><h3>Go API · N instances</h3></div><span class="meta">:8080</span></div>
+        <div class="rows">
+          <div class="r"><code>middleware</code><span>request id · recover · auth · per-key limit</span></div>
+          <div class="r"><code>POST</code><span>validate → allocate code → insert</span></div>
+          <div class="r"><code>GET</code><span>resolve → cache-aside → 302</span></div>
+          <div class="r"><code>DELETE</code><span>soft delete + evict cache</span></div>
+        </div>
+      </div>
+
+      <div class="conn"><span class="t"><b>cache read</b> · GET link:{code}</span></div>
+
+      <div class="node redis">
+        <div class="nhead"><div><span class="label">cache, not truth</span><h3>Redis</h3></div><span class="meta">TTL ≤ 24 h</span></div>
+        <div class="rows">
+          <div class="r"><code>link:{code}</code><span>target + expiry</span></div>
+          <div class="r"><code>miss:{code}</code><span>negative hit, 30 s</span></div>
+          <div class="r"><code>rl:{user}:{min}</code><span>INCR + EXPIRE, atomic</span></div>
+        </div>
+      </div>
+
+      <div class="conn"><span class="t"><b>only on a miss</b> · SELECT … WHERE code=$1 AND not expired</span></div>
+
+      <div class="node pg">
+        <div class="nhead"><div><span class="label">source of truth</span><h3>PostgreSQL</h3></div><span class="meta">durable</span></div>
+        <div class="rows">
+          <div class="r"><code>links</code><span>code PK · target · owner · expires_at · clicks</span></div>
+          <div class="r"><code>users</code><span>API key hash, never the key</span></div>
+          <div class="r"><code>click_events</code><span>append-only, one row per redirect</span></div>
+        </div>
+      </div>
+
+      <div class="conn" style="border:0"><span class="t">in parallel with every redirect</span></div>
+
+      <div class="node async">
+        <div class="nhead"><div><span class="label">never blocks a response</span><h3>Click recorder</h3></div><span class="meta">2 workers</span></div>
+        <div class="rows">
+          <div class="r"><code>handler → buffer → worker</code><span>bounded channel; drops when full</span></div>
+          <div class="r"><code>one transaction</code><span>insert event + increment links.clicks</span></div>
+        </div>
+      </div>
+
+    </div>
+
+    <aside class="aside">
+      <div class="card">
+        <h4>What the shape guarantees</h4>
+        <ul>
+          <li><b>Postgres is truth</b>Flush Redis and every link still resolves.</li>
+          <li><b>Collision-checked</b>Primary key plus retry; a duplicate never overwrites a live code.</li>
+          <li><b>Revocation is immediate</b>Delete evicts the cache entry in the same request.</li>
+          <li><b>Redirects never wait</b>Clicks go through a bounded buffer, not a synchronous insert.</li>
+          <li><b>Instances share nothing</b>No sessions or in-process counters, so the balancer needs no affinity.</li>
+          <li><b>Degrades, not fails</b>Cache and limiter fail open; only Postgres is required for readiness.</li>
+        </ul>
+        <p class="foot">Codes: 7 base62 chars from <code>crypto/rand</code>, ~3.5 × 10<sup>12</sup> values, unique by primary key.</p>
+      </div>
+    </aside>
+  </div>
+
+  <footer>cmd/api · internal/link · internal/httpapi · internal/storage</footer>
+</div>
+</body>
+</html>

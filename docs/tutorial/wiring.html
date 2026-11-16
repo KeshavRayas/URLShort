@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>URL shortener — wiring</title>
+<style>
+  :root{
+    --paper:#f2f0eb;--sheet:#fffdfa;--ink:#14161a;--muted:#5d6573;--faint:#8b93a1;
+    --line:#e3dfd6;--blue:#1a56db;--blue-soft:#eef3fe;--teal:#0b7285;--teal-soft:#e9f6f7;
+    --red:#b42318;--violet:#6d28d9;
+    --mono:ui-monospace,"Cascadia Mono","JetBrains Mono",Consolas,monospace;
+    --sans:ui-sans-serif,"Segoe UI",system-ui,-apple-system,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:13px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  .page{width:400px;padding:18px 18px 20px}
+  .rule{height:3px;background:linear-gradient(90deg,var(--blue) 0 50%,var(--teal) 50% 100%);border-radius:3px}
+  header{padding:16px 0 0}
+  .eyebrow{font-family:var(--mono);font-size:8.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--faint);margin:0 0 8px}
+  h1{font-size:23px;line-height:1.12;letter-spacing:-.022em;margin:0 0 6px;font-weight:650}
+  .deck{margin:0;color:var(--muted);font-size:11.8px}
+  .chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:10px}
+  .chip{font-family:var(--mono);font-size:9px;color:var(--muted);background:#fff;border:1px solid var(--line);border-radius:999px;padding:2px 7px}
+  .chip.hot{color:var(--red);border-color:#ecc9c4;background:#fbefee}
+
+  .sec{display:flex;align-items:center;gap:8px;margin:22px 0 4px}
+  .sec .n{font-family:var(--mono);font-size:8.5px;color:var(--faint);border:1px solid var(--line);background:#fff;border-radius:4px;padding:1px 4px}
+  .sec h2{font-size:14px;margin:0;font-weight:650;letter-spacing:-.01em}
+  .sec-sub{margin:0 0 10px;color:var(--muted);font-size:11px}
+
+  .lane{background:var(--sheet);border:1px solid var(--line);border-radius:12px;padding:12px 12px 6px;margin-bottom:10px}
+  .lane-h{display:flex;align-items:center;gap:7px;font-family:var(--mono);font-size:8.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);margin-bottom:10px}
+  .swatch{width:8px;height:8px;border-radius:2px;background:var(--c)}
+  .lane.write{--c:var(--blue);--cs:var(--blue-soft)}
+  .lane.read{--c:var(--teal);--cs:var(--teal-soft)}
+
+  .step{position:relative;padding:0 0 13px 30px}
+  .step:last-child{padding-bottom:2px}
+  .step::before{content:"";position:absolute;left:9.5px;top:20px;bottom:-2px;width:1px;background:var(--c);opacity:.28}
+  .step:last-child::before{display:none}
+  .dot{
+    position:absolute;left:0;top:0;width:20px;height:20px;border-radius:50%;
+    background:#fff;border:1.4px solid var(--c);color:var(--c);
+    display:grid;place-items:center;font-family:var(--mono);font-size:9.5px;font-weight:600;
+  }
+  .st{font-size:12.2px;font-weight:650;letter-spacing:-.005em;margin:0 0 1px}
+  .st .fn{font-family:var(--mono);font-size:10.8px;font-weight:600}
+  .sd{font-size:10.8px;color:var(--muted);line-height:1.45}
+  .sd code{font-family:var(--mono);font-size:10px;color:var(--ink)}
+  .badge{display:inline-block;font-family:var(--mono);font-size:8.6px;letter-spacing:.04em;background:var(--cs);color:var(--c);border-radius:4px;padding:1px 5px;margin-left:4px;vertical-align:1px}
+
+  .note-strip{font-size:10.4px;color:var(--faint);margin:2px 0 0;padding:0 2px}
+  footer{margin-top:14px;padding-top:8px;border-top:1px solid var(--line);font-size:8.6px;color:var(--faint);font-family:var(--mono)}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="rule"></div>
+
+  <header>
+    <p class="eyebrow">project-based-learning → Go</p>
+    <h1>URL shortener in Go</h1>
+    <p class="deck">Eddy WM’s four-part Gin + Redis build, drawn as two request paths.</p>
+    <div class="chips">
+      <span class="chip">Gin :9808</span>
+      <span class="chip">go-redis v8</span>
+      <span class="chip hot">6 h TTL</span>
+    </div>
+  </header>
+
+  <div class="sec"><span class="n">01</span><h2>How it is wired</h2></div>
+  <p class="sec-sub">Two routes, one process, one store.</p>
+
+  <div class="lane write">
+    <div class="lane-h"><span class="swatch"></span>Write · create a short link</div>
+
+    <div class="step">
+      <span class="dot">1</span>
+      <div class="st">Client</div>
+      <div class="sd"><code>POST /create-short-url</code> with <code>{ long_url, user_id }</code></div>
+    </div>
+
+    <div class="step">
+      <span class="dot">2</span>
+      <div class="st">Gin engine <span class="badge">main.go</span></div>
+      <div class="sd">routes to <code>CreateShortUrl</code>; binds the JSON, 400 if a field is missing</div>
+    </div>
+
+    <div class="step">
+      <span class="dot">3</span>
+      <div class="st"><span class="fn">GenerateShortLink</span></div>
+      <div class="sd">pure function: <code>sha256(url + user)</code> → base58 → 8 chars</div>
+    </div>
+
+    <div class="step">
+      <span class="dot">4</span>
+      <div class="st"><span class="fn">SaveUrlMapping</span></div>
+      <div class="sd">takes <code>user_id</code> and ignores it — only <code>code → url</code> is written</div>
+    </div>
+
+    <div class="step">
+      <span class="dot">5</span>
+      <div class="st">Redis</div>
+      <div class="sd"><code>SET code → long_url</code>, expires in 6 h</div>
+    </div>
+  </div>
+
+  <div class="lane read">
+    <div class="lane-h"><span class="swatch"></span>Read · follow a short link</div>
+
+    <div class="step">
+      <span class="dot">6</span>
+      <div class="st">Client</div>
+      <div class="sd"><code>GET /&lt;code&gt;</code> — same host, no redirect domain</div>
+    </div>
+
+    <div class="step">
+      <span class="dot">7</span>
+      <div class="st">Gin engine</div>
+      <div class="sd">routes to <code>HandleShortUrlRedirect</code>; reads the path param</div>
+    </div>
+
+    <div class="step">
+      <span class="dot">8</span>
+      <div class="st"><span class="fn">RetrieveInitialUrl</span></div>
+      <div class="sd">looks up the code; a miss panics, so “unknown” becomes a 500</div>
+    </div>
+
+    <div class="step">
+      <span class="dot">9</span>
+      <div class="st">Redis → browser</div>
+      <div class="sd">returns the URL, handler answers <code>302</code>, browser follows it</div>
+    </div>
+  </div>
+
+  <p class="note-strip">Both lanes share the same Gin instance and the same store singleton. There is no queue and no second service.</p>
+
+  <footer>eddywm.com · parts I–IV · github.com/eddywm/go-shortener-wm</footer>
+</div>
+</body>
+</html>

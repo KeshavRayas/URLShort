@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Go URL Shortener — Design Map (Gin + Redis)</title>
+<style>
+  :root{
+    --paper:#f2f0eb;
+    --sheet:#fffdfa;
+    --ink:#14161a;
+    --muted:#5d6573;
+    --faint:#8b93a1;
+    --line:#e3dfd6;
+    --blue:#1a56db;
+    --blue-soft:#eef3fe;
+    --teal:#0b7285;
+    --teal-soft:#e9f6f7;
+    --red:#b42318;
+    --red-soft:#fbefee;
+    --violet:#6d28d9;
+    --violet-soft:#f3eefe;
+    --mono: ui-monospace, "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+    --sans: ui-sans-serif, "Segoe UI", system-ui, -apple-system, sans-serif;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0;
+    background:var(--paper);
+    color:var(--ink);
+    font-family:var(--sans);
+    font-size:15px;
+    line-height:1.55;
+    -webkit-font-smoothing:antialiased;
+  }
+  .page{max-width:1360px;margin:0 auto;padding:36px 30px 64px}
+  .rule{height:3px;background:linear-gradient(90deg,var(--blue) 0 33%,var(--teal) 33% 66%,var(--red) 66% 100%);border-radius:3px}
+
+  header{padding:26px 0 0}
+  .eyebrow{
+    font-family:var(--mono);
+    font-size:11px;
+    letter-spacing:.14em;
+    text-transform:uppercase;
+    color:var(--faint);
+    margin:0 0 14px;
+  }
+  .eyebrow b{color:var(--muted);font-weight:600}
+  h1{
+    font-size:clamp(28px,3.2vw,40px);
+    line-height:1.1;
+    letter-spacing:-.022em;
+    margin:0 0 14px;
+    font-weight:650;
+  }
+  .deck{margin:0;max-width:76ch;color:var(--muted);font-size:16px}
+  .deck b{color:var(--ink);font-weight:600}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:21px}
+  .chip{
+    font-family:var(--mono);font-size:11.5px;color:var(--muted);
+    background:#fff;border:1px solid var(--line);border-radius:999px;padding:4px 11px;
+  }
+  .chip.hot{color:var(--red);border-color:#ecc9c4;background:var(--red-soft)}
+
+  section{margin-top:44px}
+  .sec-head{display:flex;align-items:baseline;gap:12px;margin-bottom:6px}
+  .sec-num{
+    font-family:var(--mono);font-size:10.5px;color:var(--faint);
+    border:1px solid var(--line);background:#fff;border-radius:5px;
+    padding:2px 6px;line-height:1.5;
+  }
+  h2{font-size:19px;letter-spacing:-.012em;margin:0;font-weight:640}
+  .sec-sub{color:var(--muted);font-size:13.5px;margin:4px 0 18px}
+
+  .figure{
+    background:var(--sheet);
+    border:1px solid var(--line);
+    border-radius:14px;
+    padding:20px 20px 14px;
+    box-shadow:0 1px 0 rgba(20,22,26,.03), 0 18px 40px -34px rgba(20,22,26,.5);
+  }
+  .figure svg{display:block;width:100%;height:auto}
+  .figcap{
+    font-size:11.5px;color:var(--faint);margin:10px 4px 2px;
+    display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;
+  }
+  .figcap b{color:var(--muted);font-weight:600}
+  .figcap code{
+    font-family:var(--mono);font-size:11px;color:var(--muted);
+    background:#fff;border:1px solid var(--line);border-radius:4px;padding:0 5px;
+  }
+
+  /* SVG type — classes win over presentation attributes, so sizes live here */
+  text{font-family:var(--sans);fill:var(--ink)}
+  .t-eyebrow{font-family:var(--mono);font-size:10px;letter-spacing:.13em;text-transform:uppercase;fill:var(--faint)}
+  .t-title{font-size:13.5px;font-weight:650;letter-spacing:-.01em}
+  .t-body{font-size:11.4px;fill:var(--muted)}
+  .t-mono{font-family:var(--mono);font-size:10.8px;fill:var(--ink)}
+  .t-mono-mut{font-family:var(--mono);font-size:10.8px;fill:var(--muted)}
+  .t-num{font-family:var(--mono);font-size:11px;font-weight:600}
+  .t-lane{font-family:var(--mono);font-size:10.5px;letter-spacing:.16em;fill:var(--faint)}
+
+  .legend{
+    display:grid;grid-template-columns:1fr 1fr;gap:0 48px;
+    margin-top:16px;padding-top:18px;border-top:1px solid var(--line);
+  }
+  .leg-col{display:grid;align-content:start;gap:3px}
+  .leg-item{display:grid;grid-template-columns:26px 1fr;gap:9px;align-items:start;padding:5px 0}
+  .leg-n{
+    width:20px;height:20px;border-radius:50%;border:1.4px solid currentColor;
+    display:grid;place-items:center;font-family:var(--mono);font-size:10.5px;font-weight:600;
+    margin-top:1px;
+  }
+  .leg-w{color:var(--blue)}
+  .leg-r{color:var(--teal)}
+  .leg-item p{margin:0;font-size:12.6px;line-height:1.5;color:var(--muted)}
+  .leg-item p b{color:var(--ink);font-weight:600}
+  .leg-item code{font-family:var(--mono);font-size:11.5px;color:var(--ink)}
+  .leg-label{
+    font-family:var(--mono);font-size:10px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--faint);margin:0 0 8px;
+  }
+
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:stretch}
+  .card{
+    background:var(--sheet);border:1px solid var(--line);border-radius:14px;
+    padding:18px 20px 20px;
+  }
+  .card.stack{display:flex;flex-direction:column}
+  .card h3{
+    margin:0 0 3px;font-size:13px;font-weight:650;letter-spacing:-.005em;
+  }
+  .card .hint{font-size:12px;color:var(--faint);margin:0 0 14px}
+  .card .hint code{font-family:var(--mono);font-size:11.2px;color:var(--muted)}
+
+  .record{border:1px solid var(--line);border-radius:10px;overflow:hidden;font-family:var(--mono);font-size:11.5px}
+  .record .row{display:grid;grid-template-columns:64px 1fr;gap:10px;padding:7px 12px;border-bottom:1px solid #efebe3}
+  .record .row:last-child{border-bottom:0}
+  .record .k{color:var(--faint);letter-spacing:.06em}
+  .record .v{color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .record .v.warn{color:var(--red)}
+
+  .sig{display:grid;gap:11px;font-family:var(--mono);font-size:11.3px;line-height:1.5}
+  .sig .fn{color:var(--ink)}
+  .sig .fn em{font-style:normal;color:var(--violet)}
+  .sig .fn s{text-decoration:none;color:var(--teal)}
+  .sig .note{font-family:var(--sans);font-size:10.8px;color:var(--faint);margin-top:2px}
+
+  .pkg{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(0,1fr);gap:36px;margin-top:18px}
+  .pkg-side{border-left:1px solid var(--line);padding-left:28px}
+  .pkg-eyebrow{
+    font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--faint);margin-bottom:10px;
+  }
+  .pkg-list{margin:0;padding-left:16px;font-size:12.4px;color:var(--muted);line-height:1.6}
+  .pkg-list li{margin-bottom:9px}
+  .pkg-list li:last-child{margin-bottom:0}
+  .pkg-list b{color:var(--ink);font-weight:600}
+  .pkg-list code{font-family:var(--mono);font-size:11.2px;color:var(--ink)}
+
+  .tree{
+    font-family:var(--mono);font-size:11.8px;line-height:1.85;
+    margin:0;white-space:pre;overflow-x:auto;color:var(--ink);
+  }
+  .tree i{font-style:normal;color:var(--faint)}
+  .tree b{font-weight:600;color:var(--violet)}
+
+  .notes{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:18px}
+  .note{
+    background:var(--sheet);border:1px solid var(--line);border-left:3px solid var(--red);
+    border-radius:0 12px 12px 0;padding:14px 18px 15px;
+  }
+  .note.ok{border-left-color:var(--teal)}
+  .note h4{margin:0 0 5px;font-size:12.8px;font-weight:650}
+  .note p{margin:0;font-size:12.4px;color:var(--muted);line-height:1.55}
+  .note code{font-family:var(--mono);font-size:11.2px;color:var(--ink)}
+
+  footer{
+    margin-top:44px;padding-top:20px;border-top:1px solid var(--line);
+    color:var(--faint);font-size:11.8px;line-height:1.7;
+  }
+  footer a{color:var(--muted);text-decoration:none;border-bottom:1px solid var(--line)}
+  footer a:hover{color:var(--ink)}
+  .srcs{display:grid;gap:3px;margin-top:8px}
+
+  @media (max-width:900px){
+    .page{padding:26px 18px 52px}
+    .legend,.grid2,.notes,.pkg{grid-template-columns:1fr}
+    .pkg-side{border-left:0;padding-left:0;border-top:1px solid var(--line);padding-top:18px}
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="rule"></div>
+
+  <header>
+    <p class="eyebrow"><b>practical-tutorials / project-based-learning</b> &nbsp;→&nbsp; Go &nbsp;→&nbsp; URL shortener</p>
+    <h1>URL shortener in Go — how it is put together</h1>
+    <p class="deck">
+      The entry the list points to is <b>“Let’s build a URL shortener in Go — with Gin &amp; Redis”</b>
+      by Eddy WM, a four-part build. It is a small service with a clean split: an HTTP layer,
+      a pure code generator, and a Redis-backed store. Below is the design those four parts assemble.
+    </p>
+    <div class="chips">
+      <span class="chip">Go 1.13</span>
+      <span class="chip">Gin 1.6</span>
+      <span class="chip">go-redis v8</span>
+      <span class="chip">SHA-256 → Base58</span>
+      <span class="chip">:9808</span>
+      <span class="chip hot">Redis only · 6 h TTL</span>
+    </div>
+  </header>
+
+  <section>
+    <div class="sec-head"><span class="sec-num">01</span><h2>Request topology</h2></div>
+    <p class="sec-sub">Two routes do all the work. One writes a mapping, one reads it back and redirects.</p>
+
+    <div class="figure">
+      <svg viewBox="0 0 1240 560" role="img" aria-label="Architecture: client to Gin router, two paths through handler, shortener and store, into Redis">
+        <defs>
+          <marker id="ah-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+            <path d="M0,0 L10,5 L0,10 Z" fill="#1a56db"/>
+          </marker>
+          <marker id="ah-teal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+            <path d="M0,0 L10,5 L0,10 Z" fill="#0b7285"/>
+          </marker>
+        </defs>
+
+        <text class="t-lane" x="408" y="82">WRITE PATH</text>
+        <text class="t-lane" x="408" y="358">READ PATH</text>
+
+        <!-- client -->
+        <rect x="16" y="96" width="112" height="408" rx="12" fill="#fff" stroke="#ded9cf"/>
+        <text class="t-eyebrow" x="32" y="126">Client</text>
+        <text class="t-title" x="32" y="150">browser</text>
+        <text class="t-mono-mut" x="32" y="170">curl</text>
+        <text class="t-body" x="32" y="204">POST JSON</text>
+        <text class="t-body" x="32" y="220">or follow a</text>
+        <text class="t-body" x="32" y="236">short link</text>
+        <line x1="32" y1="430" x2="112" y2="430" stroke="#ece8e0"/>
+        <text class="t-body" x="32" y="452" style="fill:#8b93a1">no auth</text>
+        <text class="t-body" x="32" y="468" style="fill:#8b93a1">no sessions</text>
+
+        <!-- gin -->
+        <rect x="168" y="96" width="200" height="408" rx="12" fill="#eef3fe" stroke="#c3d3f7"/>
+        <text class="t-eyebrow" x="184" y="126">package main</text>
+        <text class="t-title" x="184" y="148">Gin engine</text>
+        <text class="t-mono-mut" x="184" y="166">:9808 · gin.Default()</text>
+        <line x1="184" y1="180" x2="352" y2="180" stroke="#d3ddf3"/>
+
+        <text class="t-mono" x="184" y="206" style="fill:#0b7285;font-weight:600">GET</text>
+        <text class="t-mono" x="220" y="206">/</text>
+        <text class="t-body" x="184" y="224">health JSON</text>
+
+        <text class="t-mono" x="184" y="258" style="fill:#1a56db;font-weight:600">POST</text>
+        <text class="t-mono" x="232" y="258">/create-short-url</text>
+        <text class="t-body" x="184" y="276">create mapping</text>
+
+        <text class="t-mono" x="184" y="310" style="fill:#0b7285;font-weight:600">GET</text>
+        <text class="t-mono" x="220" y="310">/:shortUrl</text>
+        <text class="t-body" x="184" y="328">redirect to origin</text>
+
+        <line x1="184" y1="380" x2="352" y2="380" stroke="#d3ddf3"/>
+        <text class="t-eyebrow" x="184" y="404">boot</text>
+        <text class="t-mono-mut" x="184" y="424">store.InitializeStore()</text>
+        <text class="t-mono-mut" x="184" y="442">r.Run(":9808")</text>
+        <text class="t-body" x="184" y="462">panics if either fails</text>
+
+        <!-- write handler -->
+        <rect x="408" y="96" width="196" height="132" rx="12" fill="#fff" stroke="#d6d0c5"/>
+        <text class="t-eyebrow" x="424" y="120">handler</text>
+        <text class="t-title" x="424" y="140">CreateShortUrl</text>
+        <text class="t-body" x="424" y="164">bind UrlCreationRequest</text>
+        <text class="t-body" x="424" y="182">long_url, user_id required</text>
+        <text class="t-body" x="424" y="200">400 on bind error</text>
+        <text class="t-body" x="424" y="218" style="fill:#1a56db">returns short_url in JSON</text>
+
+        <!-- read handler -->
+        <rect x="408" y="372" width="196" height="132" rx="12" fill="#fff" stroke="#d6d0c5"/>
+        <text class="t-eyebrow" x="424" y="396">handler</text>
+        <text class="t-title" x="424" y="416">HandleShortUrlRedirect</text>
+        <text class="t-mono-mut" x="424" y="440">c.Param("shortUrl")</text>
+        <text class="t-body" x="424" y="458">no format check</text>
+        <text class="t-body" x="424" y="482" style="fill:#0b7285">302 Location: long_url</text>
+
+        <!-- shortener -->
+        <rect x="644" y="96" width="176" height="132" rx="12" fill="#f3eefe" stroke="#d5c8f5"/>
+        <text class="t-eyebrow" x="660" y="120">shortener</text>
+        <text class="t-title" x="660" y="140">GenerateShortLink</text>
+        <text class="t-body" x="660" y="164">pure function</text>
+        <text class="t-body" x="660" y="180">no I/O, no state</text>
+        <text class="t-mono-mut" x="660" y="202">sha256 → base58</text>
+        <text class="t-body" x="660" y="220">returns 8 characters</text>
+
+        <!-- store -->
+        <rect x="860" y="96" width="176" height="408" rx="12" fill="#fff" stroke="#d6d0c5"/>
+        <text class="t-eyebrow" x="876" y="126">store</text>
+        <text class="t-title" x="876" y="148">StorageService</text>
+        <text class="t-body" x="876" y="166">*redis.Client wrapper</text>
+        <line x1="876" y1="184" x2="1020" y2="184" stroke="#ece8e0"/>
+
+        <text class="t-mono" x="876" y="212">SaveUrlMapping()</text>
+        <text class="t-mono-mut" x="876" y="230">SET code → long_url</text>
+        <text class="t-mono" x="876" y="248" style="fill:#b42318">TTL 6h</text>
+        <line x1="876" y1="268" x2="1020" y2="268" stroke="#ece8e0"/>
+
+        <text class="t-mono" x="876" y="296">RetrieveInitialUrl()</text>
+        <text class="t-mono-mut" x="876" y="314">GET code</text>
+        <text class="t-body" x="876" y="332">no not-found branch</text>
+        <line x1="876" y1="352" x2="1020" y2="352" stroke="#ece8e0"/>
+
+        <text class="t-body" x="876" y="436">package-level singleton</text>
+        <text class="t-mono-mut" x="876" y="454">go-redis v8</text>
+
+        <!-- redis -->
+        <rect x="1072" y="150" width="152" height="320" fill="#fbf0ef"/>
+        <line x1="1072" y1="150" x2="1072" y2="470" stroke="#c97972" stroke-width="1.2"/>
+        <line x1="1224" y1="150" x2="1224" y2="470" stroke="#c97972" stroke-width="1.2"/>
+        <ellipse cx="1148" cy="470" rx="76" ry="16" fill="#fbf0ef" stroke="#c97972" stroke-width="1.2"/>
+        <ellipse cx="1148" cy="150" rx="76" ry="16" fill="#fdf7f6" stroke="#c97972" stroke-width="1.2"/>
+        <text class="t-title" x="1148" y="290" text-anchor="middle">Redis</text>
+        <text class="t-mono-mut" x="1148" y="314" text-anchor="middle">localhost:6379</text>
+        <text class="t-mono-mut" x="1148" y="332" text-anchor="middle">db 0</text>
+        <text class="t-body" x="1148" y="364" text-anchor="middle">the only store</text>
+
+        <!-- write arrows -->
+        <line x1="128" y1="162" x2="164" y2="162" stroke="#1a56db" stroke-width="1.6" marker-end="url(#ah-blue)"/>
+        <line x1="368" y1="162" x2="404" y2="162" stroke="#1a56db" stroke-width="1.6" marker-end="url(#ah-blue)"/>
+        <line x1="604" y1="162" x2="640" y2="162" stroke="#1a56db" stroke-width="1.6" marker-end="url(#ah-blue)"/>
+        <line x1="820" y1="162" x2="856" y2="162" stroke="#1a56db" stroke-width="1.6" marker-end="url(#ah-blue)"/>
+        <line x1="1036" y1="162" x2="1068" y2="162" stroke="#1a56db" stroke-width="1.6" marker-end="url(#ah-blue)"/>
+
+        <!-- read arrows -->
+        <line x1="128" y1="438" x2="164" y2="438" stroke="#0b7285" stroke-width="1.6" marker-end="url(#ah-teal)"/>
+        <line x1="368" y1="438" x2="404" y2="438" stroke="#0b7285" stroke-width="1.6" marker-end="url(#ah-teal)"/>
+        <line x1="604" y1="438" x2="856" y2="438" stroke="#0b7285" stroke-width="1.6" marker-end="url(#ah-teal)"/>
+        <line x1="1036" y1="438" x2="1068" y2="438" stroke="#0b7285" stroke-width="1.6" marker-end="url(#ah-teal)"/>
+
+        <!-- badges -->
+        <g>
+          <circle cx="146" cy="162" r="9.5" fill="#fffdfa" stroke="#1a56db" stroke-width="1.4"/>
+          <text class="t-num" x="146" y="165.5" text-anchor="middle" style="fill:#1a56db">1</text>
+        </g>
+        <g>
+          <circle cx="386" cy="162" r="9.5" fill="#fffdfa" stroke="#1a56db" stroke-width="1.4"/>
+          <text class="t-num" x="386" y="165.5" text-anchor="middle" style="fill:#1a56db">2</text>
+        </g>
+        <g>
+          <circle cx="622" cy="162" r="9.5" fill="#fffdfa" stroke="#1a56db" stroke-width="1.4"/>
+          <text class="t-num" x="622" y="165.5" text-anchor="middle" style="fill:#1a56db">3</text>
+        </g>
+        <g>
+          <circle cx="838" cy="162" r="9.5" fill="#fffdfa" stroke="#1a56db" stroke-width="1.4"/>
+          <text class="t-num" x="838" y="165.5" text-anchor="middle" style="fill:#1a56db">4</text>
+        </g>
+        <g>
+          <circle cx="1052" cy="162" r="9.5" fill="#fffdfa" stroke="#1a56db" stroke-width="1.4"/>
+          <text class="t-num" x="1052" y="165.5" text-anchor="middle" style="fill:#1a56db">5</text>
+        </g>
+
+        <g>
+          <circle cx="146" cy="438" r="9.5" fill="#fffdfa" stroke="#0b7285" stroke-width="1.4"/>
+          <text class="t-num" x="146" y="441.5" text-anchor="middle" style="fill:#0b7285">6</text>
+        </g>
+        <g>
+          <circle cx="386" cy="438" r="9.5" fill="#fffdfa" stroke="#0b7285" stroke-width="1.4"/>
+          <text class="t-num" x="386" y="441.5" text-anchor="middle" style="fill:#0b7285">7</text>
+        </g>
+        <g>
+          <circle cx="730" cy="438" r="9.5" fill="#fffdfa" stroke="#0b7285" stroke-width="1.4"/>
+          <text class="t-num" x="730" y="441.5" text-anchor="middle" style="fill:#0b7285">8</text>
+        </g>
+        <g>
+          <circle cx="1052" cy="438" r="9.5" fill="#fffdfa" stroke="#0b7285" stroke-width="1.4"/>
+          <text class="t-num" x="1052" y="441.5" text-anchor="middle" style="fill:#0b7285">9</text>
+        </g>
+
+        <text class="t-body" x="16" y="540">Every arrow is a synchronous call inside one process — there is no queue, no worker, no second service.</text>
+      </svg>
+
+      <div class="legend">
+        <div class="leg-col">
+          <div class="leg-label">Write — create a short link</div>
+          <div class="leg-item">
+            <div class="leg-n leg-w">1</div>
+            <p><b>Client</b> sends <code>POST /create-short-url</code> with <code>{ long_url, user_id }</code>.</p>
+          </div>
+          <div class="leg-item">
+            <div class="leg-n leg-w">2</div>
+            <p><b>Gin</b> routes to <code>CreateShortUrl</code>; <code>ShouldBindJSON</code> validates both fields.</p>
+          </div>
+          <div class="leg-item">
+            <div class="leg-n leg-w">3</div>
+            <p><b>Generator</b> turns the pair into an 8-character code. Pure, deterministic, no datastore.</p>
+          </div>
+          <div class="leg-item">
+            <div class="leg-n leg-w">4</div>
+            <p><b>Store</b> receives the mapping. Note that <code>user_id</code> is passed in but never persisted.</p>
+          </div>
+          <div class="leg-item">
+            <div class="leg-n leg-w">5</div>
+            <p><b>Redis</b> holds <code>code → long_url</code> with a fixed 6-hour expiry.</p>
+          </div>
+        </div>
+
+        <div class="leg-col">
+          <div class="leg-label">Read — follow a short link</div>
+          <div class="leg-item">
+            <div class="leg-n leg-r">6</div>
+            <p><b>Client</b> opens <code>GET /&lt;code&gt;</code> — the same host, no separate redirect domain.</p>
+          </div>
+          <div class="leg-item">
+            <div class="leg-n leg-r">7</div>
+            <p><b>Gin</b> routes to <code>HandleShortUrlRedirect</code>, which reads the path parameter.</p>
+          </div>
+          <div class="leg-item">
+            <div class="leg-n leg-r">8</div>
+            <p><b>Store</b> looks up the code. A miss returns an error that is turned into a panic.</p>
+          </div>
+          <div class="leg-item">
+            <div class="leg-n leg-r">9</div>
+            <p><b>Redis</b> returns the original URL; the handler answers <code>302</code> and the browser follows it.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="figcap">
+        <span>Solid boxes are Go packages. <b>main.go</b> is the only place routes are registered.</span>
+        <span>Source: eddywm/go-shortener-wm</span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head"><span class="sec-num">02</span><h2>How a URL becomes eight characters</h2></div>
+    <p class="sec-sub">The generator is the whole algorithm: hash, narrow to 64 bits, encode, truncate.</p>
+
+    <div class="figure">
+      <svg viewBox="0 0 1240 212" role="img" aria-label="Pipeline: url plus user id, sha256, uint64, base58, first eight characters">
+        <defs>
+          <marker id="ah-v" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M0,0 L10,5 L0,10 Z" fill="#6d28d9"/>
+          </marker>
+        </defs>
+
+        <rect x="12" y="14" width="216" height="64" rx="10" fill="#fff" stroke="#ded9cf"/>
+        <text class="t-eyebrow" x="28" y="36">1 · input</text>
+        <text class="t-title" x="28" y="60">long_url + user_id</text>
+
+        <rect x="262" y="14" width="216" height="64" rx="10" fill="#fff" stroke="#ded9cf"/>
+        <text class="t-eyebrow" x="278" y="36">2 · hash</text>
+        <text class="t-title" x="278" y="60">SHA-256</text>
+
+        <rect x="512" y="14" width="216" height="64" rx="10" fill="#fff" stroke="#ded9cf"/>
+        <text class="t-eyebrow" x="528" y="36">3 · narrow</text>
+        <text class="t-title" x="528" y="60">big.Int → uint64</text>
+
+        <rect x="762" y="14" width="216" height="64" rx="10" fill="#fff" stroke="#ded9cf"/>
+        <text class="t-eyebrow" x="778" y="36">4 · encode</text>
+        <text class="t-title" x="778" y="60">Base58 (Bitcoin)</text>
+
+        <rect x="1012" y="14" width="216" height="64" rx="10" fill="#f3eefe" stroke="#d5c8f5"/>
+        <text class="t-eyebrow" x="1028" y="36">5 · truncate</text>
+        <text class="t-title" x="1028" y="60">first 8 characters</text>
+
+        <line x1="228" y1="46" x2="256" y2="46" stroke="#6d28d9" stroke-width="1.5" marker-end="url(#ah-v)"/>
+        <line x1="478" y1="46" x2="506" y2="46" stroke="#6d28d9" stroke-width="1.5" marker-end="url(#ah-v)"/>
+        <line x1="728" y1="46" x2="756" y2="46" stroke="#6d28d9" stroke-width="1.5" marker-end="url(#ah-v)"/>
+        <line x1="978" y1="46" x2="1006" y2="46" stroke="#6d28d9" stroke-width="1.5" marker-end="url(#ah-v)"/>
+
+        <text class="t-mono" x="28" y="110">https://guru3d.com/…html</text>
+        <text class="t-body" x="28" y="128">plus uuid e0dba740…</text>
+
+        <text class="t-mono" x="278" y="110">8e64422b471fae2c…</text>
+        <text class="t-body" x="278" y="128">32-byte digest</text>
+
+        <text class="t-mono" x="528" y="110">18291129248657904385</text>
+        <text class="t-body" x="528" y="128">20 decimal digits</text>
+
+        <text class="t-mono" x="778" y="110">jTa4L57Pbxt</text>
+        <text class="t-body" x="778" y="128">11 characters</text>
+
+        <text class="t-mono" x="1028" y="110" style="fill:#6d28d9;font-weight:600">jTa4L57P</text>
+        <text class="t-body" x="1028" y="128">the code stored in Redis</text>
+
+        <line x1="12" y1="152" x2="1228" y2="152" stroke="#ece8e0"/>
+        <text class="t-body" x="12" y="174">Values are real — the tutorial’s own test expects <tspan class="t-mono" style="fill:#14161a">jTa4L57P</tspan> for this URL and user id.</text>
+        <text class="t-body" x="12" y="192">Same inputs always produce the same output: no random salt, no collision check, no retry.</text>
+      </svg>
+
+      <div class="figcap">
+        <span><b>Why Base58:</b> it drops <b>0 O I l</b>, so codes survive fonts, screenshots and double-clicks.</span>
+        <span>Sandwiched between the hash and the prefix: <code>finalString[:8]</code></span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head"><span class="sec-num">03</span><h2>What is actually stored, and through what interface</h2></div>
+    <p class="sec-sub">The data model is a single Redis key. The API surface is three functions.</p>
+
+    <div class="grid2">
+      <div class="card stack">
+        <h3>The record</h3>
+        <p class="hint">One key per generated code. Nothing else is written.</p>
+        <div class="record">
+          <div class="row"><span class="k">KEY</span><span class="v">jTa4L57P</span></div>
+          <div class="row"><span class="k">VALUE</span><span class="v">https://www.guru3d.com/news-story/…</span></div>
+          <div class="row"><span class="k">TTL</span><span class="v warn">6h 00m 00s</span></div>
+          <div class="row"><span class="k">USER</span><span class="v" style="color:#8b93a1">not stored</span></div>
+        </div>
+        <p class="hint" style="margin:14px 0 0">
+          No <code>user_id</code>, no <code>created_at</code>, no hit counter. Because the code is derived from
+          <code>url + user_id</code>, the same pair can never produce a second link — and an existing one can’t be listed or revoked.
+        </p>
+      </div>
+
+      <div class="card">
+        <h3>The interface</h3>
+        <p class="hint">Three exported functions connect the three packages.</p>
+        <div class="sig">
+          <div>
+            <div class="fn"><em>shortener</em>.GenerateShortLink(initialLink, userId string) string</div>
+            <div class="note">pure; used only on the write path</div>
+          </div>
+          <div>
+            <div class="fn"><s>store</s>.SaveUrlMapping(shortUrl, originalUrl, userId string)</div>
+            <div class="note">no return value — it panics on failure</div>
+          </div>
+          <div>
+            <div class="fn"><s>store</s>.RetrieveInitialUrl(shortUrl string) string</div>
+            <div class="note">panics on a cache miss, so “unknown” becomes a 500</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card pkg">
+      <div>
+        <h3>Package map</h3>
+        <p class="hint">About 200 lines of Go, test files included.</p>
+        <pre class="tree">go-shortener-wm/
+├─ <b>main.go</b>                      <i># gin.Default(), 3 routes, store boot, :9808</i>
+├─ handler/
+│  └─ handlers.go              <i># HTTP in/out: bind JSON, read param, 302 out</i>
+├─ shortener/
+│  ├─ shorturl_generator.go    <i># pure code generation: sha256 + base58</i>
+│  └─ shorturl_generator_test.go
+└─ store/
+   ├─ store_service.go         <i># redis.Client wrapper, package-level singleton</i>
+   └─ store_service_test.go</pre>
+      </div>
+      <div class="pkg-side">
+        <div class="pkg-eyebrow">Reading order</div>
+        <ol class="pkg-list">
+          <li><b>main.go</b> registers three routes, then boots the store before <code>r.Run</code>.</li>
+          <li><b>handler</b> parses HTTP and delegates; it holds no logic of its own.</li>
+          <li><b>shortener</b> is pure, so its test needs no Redis at all.</li>
+          <li><b>store</b> is the only package that knows Redis exists.</li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head"><span class="sec-num">04</span><h2>Where the design holds, and where it doesn’t</h2></div>
+    <p class="sec-sub">Read as a tutorial, this is a clean separation of concerns. Read as a service, five things would bite you in production.</p>
+
+    <div class="notes">
+      <div class="note">
+        <h4>Codes are deterministic, and never checked</h4>
+        <p><code>sha256(url + user_id)</code> means forever the same code for the same pair. Nothing verifies whether that 8-char slice already belongs to another URL, so a collision silently overwrites the old mapping.</p>
+      </div>
+      <div class="note">
+        <h4>Every link expires in 6 hours</h4>
+        <p>The 6-hour <code>CacheDuration</code> is used as the Redis TTL, which is right for a cache and wrong for a link. When it lapses, the next visit panics rather than returning a 404 page.</p>
+      </div>
+      <div class="note">
+        <h4>Redis is the only store</h4>
+        <p>The article says it plainly: real traffic needs Postgres or MySQL for cold values with Redis in front. That tier appears only in the “next steps” list, not in the code.</p>
+      </div>
+      <div class="note">
+        <h4>Errors are panics</h4>
+        <p><code>SaveUrlMapping</code> and <code>RetrieveInitialUrl</code> panic on any Redis error. Gin’s recovery middleware turns that into a 500, so a typo’d short code looks like a server fault.</p>
+      </div>
+      <div class="note">
+        <h4>The response host is hardcoded</h4>
+        <p><code>host := "http://localhost:9808/"</code> is concatenated into every response, so the service returns unusable links anywhere except a laptop.</p>
+      </div>
+      <div class="note ok">
+        <h4>What is genuinely good</h4>
+        <p>The generator is pure and independently testable, storage sits behind one narrow interface, and Base58 is a thoughtful choice for something humans read and retype.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div><b>Source.</b> Listed under Go in the project-based-learning index as “Let’s build a URL shortener in Go - with Gin &amp; Redis”.</div>
+    <div class="srcs">
+      <div>Index: <a href="https://github.com/practical-tutorials/project-based-learning#go">github.com/practical-tutorials/project-based-learning — Go section</a></div>
+      <div>Series: <a href="https://www.eddywm.com/lets-build-a-url-shortener-in-go/">Part I — setup</a> · <a href="https://www.eddywm.com/lets-build-a-url-shortener-in-go-with-redis-part-2-storage-layer/">Part II — storage</a> · <a href="https://www.eddywm.com/lets-build-a-url-shortener-in-go-part-3-short-link-generation/">Part III — generator</a> · <a href="https://www.eddywm.com/lets-build-a-url-shortener-in-go-part-iv-forwarding/">Part IV — forwarding</a></div>
+      <div>Code: <a href="https://github.com/eddywm/go-shortener-wm">github.com/eddywm/go-shortener-wm</a> — verified against the repository, not just the article snippets.</div>
+    </div>
+  </footer>
+</div>
+</body>
+</html>

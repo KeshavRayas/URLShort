@@ -1,0 +1,64 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: shortener
+      POSTGRES_PASSWORD: shortener
+      POSTGRES_DB: shortener
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shortener -d shortener"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --maxmemory
+      - 256mb
+      - --maxmemory-policy
+      - allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  # The API is behind a profile so `docker compose up -d` starts only the
+  # dependencies and you can run the binary locally with live reload.
+  # Use `docker compose --profile app up -d --build` for the full stack.
+  api:
+    profiles: ["app"]
+    build: .
+    environment:
+      APP_ENV: development
+      HTTP_ADDR: ":8080"
+      PUBLIC_BASE_URL: "http://localhost:8080"
+      DATABASE_URL: "postgres://shortener:shortener@postgres:5432/shortener?sslmode=disable"
+      REDIS_ADDR: "redis:6379"
+      API_KEY_PEPPER: "local-dev-pepper"
+      BOOTSTRAP_USERS: "local:local-dev-key-change-me"
+      RATE_LIMIT_PER_MINUTE: "120"
+      ALLOW_PRIVATE_TARGETS: "true"
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  redisdata:

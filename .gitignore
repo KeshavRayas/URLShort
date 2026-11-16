@@ -1,0 +1,5 @@
+.env
+bin/
+*.exe
+e2e-report.md
+e2e-report.json
